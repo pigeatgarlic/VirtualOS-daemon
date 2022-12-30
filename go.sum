@@ -1,0 +1,6 @@
+github.com/OnePlay-Internet/daemon-tool v1.0.0 h1:PyQgl41UYQnHVkYiRtJqZHW+hJVHPlRQaf8CvN0VgJU=
+github.com/OnePlay-Internet/daemon-tool v1.0.0/go.mod h1:F16hUb07GpYoj0RZ+p+3GobPdIVEpzEnYenZF8gj+9o=
+github.com/gorilla/websocket v1.5.0 h1:PPwGk2jz7EePpoHN/+ClbZu8SPxiqlu12wZP/3sWmnc=
+github.com/gorilla/websocket v1.5.0/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+golang.org/x/net v0.4.0 h1:Q5QPcMlvfxFTAPV0+07Xz/MpK9NTXu2VDUuy0FeMfaU=
+golang.org/x/net v0.4.0/go.mod h1:MBQ8lrhLObU/6UmLb4fmbmk5OcyYmqtbGd/9yIeKjEE=
