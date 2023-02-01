@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/nedpals/supabase-go"
 	"github.com/pigeatgarlic/VirtualOS-daemon/child-process"
@@ -108,18 +109,41 @@ func main() {
 	}()
 
 	var data interface{}
-	res := supabase_client.DB.From("worker_profile").Select("*").Eq("account_id",account_id)
-	err = res.Execute(&data)
+	err = supabase_client.DB.From("worker_profile").Select("*").Eq("account_id",account_id).Execute(&data)
 	if err != nil {
 		fmt.Printf("%s",err.Error())
 		return;
 	} 
 
 	val,_ := json.MarshalIndent(data,"","  ")
-	fmt.Printf("registered new worker: %s",string(val))
+	fmt.Printf("registered new worker: %s\n",string(val))
 
+	go func() {
+		for {
+			var result interface{}
+			if res := supabase_client.DB.From("worker_profile").Update(struct{ 
+				LastUpdate string `json:"last_update"`
+			}{
+				LastUpdate: time.Now().Format(time.RFC3339Nano),
+			}).Eq("account_id",account_id).Execute(&result); res != nil {
+				fmt.Printf("error ping %s\n",res.Error())
+			}
 
+			time.Sleep(time.Second)
+		}
+	}()
 
+	go func() {
+		var raw_worker_profile interface{}
+		for {
+			time.Sleep(time.Second)
+			err = supabase_client.DB.From("worker_profile").Select("metadata").Eq("account_id",account_id).Execute(&raw_worker_profile)
+			if err != nil {
+				fmt.Printf("error sync %s\n",err.Error())
+			}
+			// last_ud := raw_worker_profile.([]interface{})[0].(map[string]interface{})["metadata"];
+		}
+	}()
 
 
 
