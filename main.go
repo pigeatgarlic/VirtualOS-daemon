@@ -9,6 +9,8 @@ import (
 
 	"github.com/nedpals/supabase-go"
 	"github.com/pigeatgarlic/VirtualOS-daemon/child-process"
+	"github.com/pigeatgarlic/VirtualOS-daemon/fabric"
+	ws "github.com/pigeatgarlic/VirtualOS-daemon/fabric/wsocket"
 	"github.com/pigeatgarlic/VirtualOS-daemon/system"
 	"github.com/pigeatgarlic/oauth2l"
 )
@@ -117,7 +119,6 @@ func main() {
 
 	val,_ := json.MarshalIndent(data,"","  ")
 	fmt.Printf("registered new worker: %s\n",string(val))
-
 	go func() {
 		for {
 			var result interface{}
@@ -136,14 +137,24 @@ func main() {
 	go func() {
 		var raw_worker_profile interface{}
 		for {
-			time.Sleep(time.Second)
+			time.Sleep(10 * time.Second)
 			err = supabase_client.DB.From("worker_profile").Select("metadata").Eq("account_id",account_id).Execute(&raw_worker_profile)
 			if err != nil {
 				fmt.Printf("error sync %s\n",err.Error())
 			}
-			// last_ud := raw_worker_profile.([]interface{})[0].(map[string]interface{})["metadata"];
 		}
 	}()
+
+
+
+	ret := childprocess.NewChildProcessSystem()
+	fabric,er :=fabric.NewFaric(ret)
+	if err != nil  {
+		fmt.Printf("%s",er.Error())
+	}
+
+
+
 
 
 

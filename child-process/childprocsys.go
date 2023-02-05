@@ -2,134 +2,125 @@ package childprocess
 
 import (
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/pigeatgarlic/VirtualOS-daemon/log"
-	"golang.org/x/net/websocket"
+	"github.com/pigeatgarlic/VirtualOS-daemon/utils"
 )
 
 type ProcessID int
+const (
+	InvalidID = -1
+)
 
-
-type ChildProcess struct {
+type Process struct{
 	exited bool
 	cmd *exec.Cmd
+
+	name string
+	path string
+
+	secret string
 }
+
 
 type ChildProcesses struct {
 	count int
 	mutex sync.Mutex
-
-	procs map[ProcessID]*ChildProcess
-	server *websocket.Server
+	procs map[ProcessID]*Process
 }
 
-func EchoServer(ws *websocket.Conn) {
-	io.Copy(ws, ws)
-}
-
-// Origin parses the Origin header in req.
-// If the Origin header is not set, it returns nil and nil.
-func Origin(config *websocket.Config, req *http.Request) (*url.URL, error) {
-	var origin string
-	switch config.Version {
-	case websocket.ProtocolVersionHybi13:
-		origin = req.Header.Get("Origin")
-	}
-	if origin == "" {
-		return nil, nil
-	}
-	return url.ParseRequestURI(origin)
-}
-func checkOrigin(config *websocket.Config, req *http.Request) (err error) {
-	config.Origin, err = Origin(config, req)
-	
-	if err == nil && config.Origin == nil {
-		return fmt.Errorf("null origin")
-	}
-	return err
-}
-
-func NewChildProcessSystem(Adress string, Path string) (ret *ChildProcesses,err error) {
-	ret = &ChildProcesses{
-		procs: make(map[ProcessID]*ChildProcess),
+func NewChildProcessSystem() (ret *ChildProcesses) {
+	return &ChildProcesses{
+		procs: make(map[ProcessID]*Process),
 		mutex: sync.Mutex{},
 		count: 0,
 	}
-
-	Config,err := websocket.NewConfig(fmt.Sprintf("ws://%s%s", Adress, Path), "http://localhost")
-	if err != nil {
-		return nil,err;
-	}
-
-	ret.server = &websocket.Server{
-		Handler: EchoServer, 
-		Handshake: checkOrigin,
-		Config: *Config,
-	}
-	return
 }
 
 func (procs *ChildProcesses) CloseAll() {
+	for ID,_ := range procs.procs {
+		procs.CloseID(ID)
+	}
+}
+
+
+func (procs *ChildProcesses) NewChildProcess(dir *string, name string,args ...string) (ProcessID,error) {
+	procs.mutex.Lock()
+	defer func() {
+		procs.count++
+		procs.mutex.Unlock()
+	}()
+
+
+	
+	path,err := utils.FindProcessPath(dir,name)
+	if err != nil {
+		return 0,err
+	}
+	cmd := exec.Command(path,args...)
+	randstr := utils.CreateRandomString(20)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("DAEMON_SECRET=%s",randstr))
+
+	id := ProcessID(procs.count)
+	log.PushLog("process %s, process id %d booting up\n", name, int(id))
+	procs.procs[id] = &Process{
+		exited : false,
+		cmd: cmd,
+		name: name,
+		path: path,
+		secret: randstr,
+	}
+
+	go procs.handleProcess(id)
+	return ProcessID(procs.count),nil
+}
+
+
+
+
+func (procs *ChildProcesses) FindIDfromSecret(secret string) ProcessID {
 	procs.mutex.Lock()
 	defer procs.mutex.Unlock()
 
-	for ID,proc := range procs.procs {
-		log.PushLog("force terminate process name %s, process id %d \n", proc.cmd.Args[0], int(ID))
+	for pi, p := range procs.procs {
+		if p.secret == secret {
+			return pi
+		}
+	}
+	return -1
+}
+
+
+func (procs *ChildProcesses) CloseID(ID ProcessID) {
+	if !procs.findID(ID){
+		return
+	} 
+
+
+
+	procs.mutex.Lock()
+	proc := procs.procs[ID]
+	procs.mutex.Unlock()
+	if (proc.exited){
+		return
+	} else {
+		log.PushLog("force terminate process name %s, process id %d \n", proc.name, int(ID))
 		proc.cmd.Process.Kill()
 	}
 }
 
-func (procs *ChildProcesses) CloseID(ID ProcessID) {
-	procs.mutex.Lock()
-	defer procs.mutex.Unlock()
 
-	proc := procs.procs[ID]
-	if proc == nil {
+func (procs *ChildProcesses) WaitID(ID ProcessID) {
+	if !procs.findID(ID) {
 		return
 	}
 
-	log.PushLog("force terminate process name %s, process id %d \n", proc.cmd.Args[0], int(ID))
-	proc.cmd.Process.Kill()
-}
-
-func (procs *ChildProcesses) GetName(ID ProcessID) string {
-	procs.mutex.Lock()
-	defer procs.mutex.Unlock()
-
-	filename := strings.Split(procs.procs[ID].cmd.Args[0],"/")
-	return strings.Split(filename[len(filename) - 1],".")[0]
-}
-
-func (procs *ChildProcesses) GetIncomingMessage(ID ProcessID) string {
-	procs.mutex.Lock()
-	defer procs.mutex.Unlock()
-
-	// TODO
-	return ""
-}
-
-func (procs *ChildProcesses) SendMessage(ID ProcessID, val string){
-	procs.mutex.Lock()
-	defer procs.mutex.Unlock()
-
-	// TODO
-}
-
-func (procs *ChildProcesses) WaitID(ID ProcessID) {
 	procs.mutex.Lock();
 	proc := procs.procs[ID];
 	procs.mutex.Unlock()
-
-	if proc == nil {
-		return
-	}
 
 	for {
 		if !proc.exited {
@@ -137,3 +128,8 @@ func (procs *ChildProcesses) WaitID(ID ProcessID) {
 		}
 	}
 }
+
+
+
+
+

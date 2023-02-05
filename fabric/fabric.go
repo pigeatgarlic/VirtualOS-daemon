@@ -1,11 +1,10 @@
 package fabric
 
 import (
-	"encoding/json"
-	"fmt"
 	"sync"
 
-	"github.com/pigeatgarlic/VirtualOS-daemon/log"
+	childprocess "github.com/pigeatgarlic/VirtualOS-daemon/child-process"
+	ws "github.com/pigeatgarlic/VirtualOS-daemon/fabric/wsocket"
 )
 
 type Command struct {
@@ -15,77 +14,35 @@ type Command struct {
 }
 
 type Fabric struct {
-	Channels map[string]*struct {
-		in chan string
-		out chan string
-	}
-
 	mutex *sync.Mutex
+	tenants map[childprocess.ProcessID]ws.IwebsocketTenant
+
+	childprocess *childprocess.ChildProcesses
+	wsserver *ws.WebsocketFabric
 }
 
 
 
-func NewFaric() *Fabric{
-	ret := Fabric {
-		Channels: make(map[string]*struct{in chan string; out chan string}),
+func NewFaric(childprocesssys *childprocess.ChildProcesses) (ret *Fabric,err error){
+	ret = &Fabric {
+		childprocess: childprocesssys,
+		tenants: make(map[childprocess.ProcessID]ws.IwebsocketTenant),
 		mutex: &sync.Mutex{},
 	}
 
 
-	return &ret;
-}
+	ret.wsserver,err = ws.NewServer("localhost:3000","/fabric",func(conn ws.IwebsocketTenant, secret string) {
+		ret.mutex.Lock()
+		defer ret.mutex.Unlock()
 
+		ProcessID := ret.childprocess.FindIDfromSecret(secret)
+		ret.tenants[ProcessID] = conn
+	})
 
-
-func (f *Fabric)DescribeRoutingRule() {
-
-}
-func (f *Fabric)route(source string,cmd Command) (dest string,err error) {
-	if source == cmd.Process {
-		dest,err = "",fmt.Errorf("loopback command")
-	} else {
-		dest,err = cmd.Process,nil
+	if err !=nil {
+		return nil,err	
 	}
-
-	return 
+	return
 }
 
 
-func (f *Fabric)HandleNewChannel(process string, in chan string, out chan string) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-
-	f.Channels[process] = &struct{in chan string; out chan string}{
-		in: in,
-		out: out,
-	}	
-
-	go func(_proc string) {
-		for {
-			f.mutex.Lock()
-			chann := f.Channels[_proc];
-			f.mutex.Unlock()
-
-			command := Command{}
-			err := json.Unmarshal([]byte(<-chann.in),&command)
-			if err != nil {
-				log.PushLog("error unmarshal message %s",err.Error())
-				continue
-			}
-
-			dest,err := f.route(_proc,command)
-			if err != nil {
-				log.PushLog("error routing message %s",err.Error())
-				continue
-			}
-
-
-			f.mutex.Lock()
-			out_chan := f.Channels[dest].out;
-			f.mutex.Unlock()
-
-			dat,_ := json.Marshal(command);
-			out_chan <- string(dat)
-		}
-	}(process)
-}
